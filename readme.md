@@ -2,15 +2,17 @@
 
 This repository contains the MATLAB implementation of a system identification and econometric analysis of monthly **Realized Volatility (RV)** across six major global equity indices from **2000 to 2026**. 
 
-The project investigates volatility persistence across distinct macroeconomic regimes, testing whether high long-run autocorrelation in pooled models is structural or partially an artifact of unmodelled level shifts between market regimes (**spurious persistence**).
+The project investigates volatility dynamics and persistence across distinct macroeconomic regimes, comparing regime-specific models against a long-run cross-period pooled benchmark.
 
 ---
 
-## Dataset & Market Regimes
+## Dataset & Preprocessing
 
-Daily closing prices are processed to compute log-returns and aggregated into monthly realized volatility (normalized by the number of trading days per month to remove deterministic seasonal effects):
+Daily closing prices are filtered for missing/invalid observations, sorted chronologically, and converted into percentage daily log-returns:
+$$r_t = 100 \cdot \left(\log P_t - \log P_{t-1}\right)$$
 
-$$\text{RV}_m = \sqrt{\frac{1}{N_m} \sum_{t \in m} r_t^2}, \qquad y_m = \log(\text{RV}_m + \varepsilon)$$
+Monthly realized volatility is aggregated across common trading months and log-transformed:
+$$\text{RV}_m = \sqrt{\sum_{t \in m} r_t^2}, \qquad y_m = \log(\text{RV}_m + \varepsilon)$$
 
 ### Analyzed Equity Indices
 * **TSX** (`^tsx_d.csv`) — S&P/TSX Composite Index (Canada)
@@ -21,43 +23,37 @@ $$\text{RV}_m = \sqrt{\frac{1}{N_m} \sum_{t \in m} r_t^2}, \qquad y_m = \log(\te
 * **FTSE-MIB** (`^fmib_d.csv`) — FTSE MIB (Italy)
 
 ### Macroeconomic Regimes
-The 2000–2026 sample is partitioned into four historical regimes:
-1. **P1 (2000–2006):** Dot-com bubble aftermath and recovery
-2. **P2 (2007–2010):** Global Financial Crisis and European sovereign debt crisis
+The 2000–2026 historical timeline is partitioned into four sub-periods:
+1. **P1 (2000–2006):** Post dot-com recovery
+2. **P2 (2007–2010):** Global Financial Crisis
 3. **P3 (2011–2017):** Post-crisis quantitative easing and bull market
-4. **P4 (2018–2026):** COVID-19 shock, inflation surge, and interest rate hikes
+4. **P4 (2018–2026):** COVID-19 shock and rate-hiking cycle
 
 ---
 
-## Methodology & Key Features
+## Methodology
 
-1. **Multi-Criteria Order Selection ($\text{ARMA}(n_a, n_c)$):**
-   * **BIC (Bayesian Information Criterion)** over the grid $n_a \in \{1,\dots,6\}$, $n_c \in \{0,\dots,4\}$.
-   * **GCV (Generalized Cross-Validation)** to approximate leave-one-out error without refitting $N$ models.
-   * **Exact PRESS (Leave-One-Out CV)** for pure AR models via the **Woodbury matrix identity** leveraging the hat matrix diagonal $h_t = \phi_t^\top (\Phi^\top \Phi)^{-1} \phi_t$, avoiding sample starvation on short regime segments.
-   * **Hold-out Cross-Validation** (70/30 split) as a benchmark.
+1. **System Identification & Order Selection:**
+   * Estimation of $\text{ARMA}(n_a, n_c)$ models via Prediction Error Methods (PEM) using `armax`.
+   * Order selection carried out over the grid $n_a \in \{1,\dots,6\}$ and $n_c \in \{0,\dots,4\}$.
+   * Multi-criteria comparison between **BIC (Bayesian Information Criterion)** on the full regime segment and **Temporal Hold-out Cross-Validation** (70% training, 30% validation).
 
-2. **Model Diagnostics & Over-Parameterization Checks:**
-   * **Residual Whiteness:** 99% confidence bounds ($\pm 2.58/\sqrt{N}$) on the residual ACF and **Ljung–Box portmanteau test** ($p$-value via Wilson–Hilferty $\chi^2$ approximation).
-   * **Pole–Zero Cancellation Detection:** Automatic flagging of near-cancellations ($\min |p_i - z_j| < \text{tol}$) and cross-market pole dispersion analysis across regimes.
-   * **Finite-Sample Bias Correction:** Analytical correction of the $\text{AR}(1)$ persistence parameter $\hat{a}_1$ via the Marriott–Pope / Kendall formula:
-     $$\hat{a}_1^{\text{corr}} = \hat{a}_1 + \frac{1 + 3\hat{a}_1}{N}$$
+2. **Cross-Period (Pooled) vs. Regime-Specific Fitting:**
+   * Compares models fitted within isolated regimes against a global cross-period pooled model.
+   * Compares residual innovation noise variance across regimes and the pooled benchmark.
 
-3. **Spurious Persistence & Multi-Experiment Pooling:**
-   * Compares a standard **Global Pooled ARMA** model (single global mean) against a **Demeaned Multi-Experiment Pooled ARMA** model (using MATLAB's `merge` across regime-demeaned `iddata` objects so regressors never cross regime boundaries).
-   * Quantifies how much of the apparent persistence $\hat{a}_1$ and innovation variance in the full sample is driven by regime level shifts rather than true intra-regime dynamics.
-
-4. **Time-Varying Parameter Tracking (RPEM / Forgetting-Factor RLS):**
-   * Implements a **Recursive Prediction Error Method / Recursive Least Squares (RLS)** estimator with forgetting factor $\lambda = 0.97$ (effective memory $\approx 33$ months) on the augmented regressor $\varphi(t) = [y(t-1),\, 1]^\top$ to jointly track time-varying persistence $a_1(t)$ and local volatility level without prior detrending.
+3. **Dynamical Analysis & Persistence:**
+   * Analysis of system stability via pole-zero constellation maps in the complex plane.
+   * Tracking of the dominant pole magnitude $\rho_{\max} = \max_i |p_i|$ and the primary autoregressive parameter $\phi_1 = -a_1$ across time regimes to assess structural changes in volatility memory.
 
 ---
 
 ## Requirements & Usage
 
-* **MATLAB** with the **System Identification Toolbox** (`iddata`, `armax`, `resid`, `merge`, `getpvec`).
+* **MATLAB** with the **System Identification Toolbox** (`iddata`, `armax`, `compare`).
 
-### Running the Code
-1. Clone this repository and ensure the six index CSV files (`^tsx_d.csv`, `^dax_d.csv`, `^nkx_d.csv`, `^kospi_d.csv`, `^ndx_d.csv`, `^fmib_d.csv`) are in the root directory.
-2. Run the main script in MATLAB:
+### Running the Analysis
+1. Place the six index CSV files (`^tsx_d.csv`, `^dax_d.csv`, `^nkx_d.csv`, `^kospi_d.csv`, `^ndx_d.csv`, `^fmib_d.csv`) in the working directory.
+2. Run the main script:
    ```matlab
    run('main_rv_identification.m')
